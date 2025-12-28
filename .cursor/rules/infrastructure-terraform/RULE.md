@@ -1,25 +1,25 @@
 ---
-description: "Infrastructure standards using AWS and Terraform"
+description: "Infrastructure as Code standards using Terraform"
 globs:
   - "infra/**"
   - "**/*.tf"
 alwaysApply: false
 ---
 
-# Infrastructure Rules (AWS + Terraform)
+# Infrastructure Rules (Terraform)
 
 ## Purpose
-Standardize how infrastructure is defined and deployed.
+Standardize how infrastructure is defined and deployed using Infrastructure as Code.
 
 ## Constraints
-- AWS is the only cloud provider
 - All infrastructure must be defined using Terraform
 - Manual infrastructure changes are not allowed
+- Infrastructure changes must be version-controlled and reviewed
 
 ## Do
 - Use Terraform modules to promote reuse
 - Keep environments explicit (dev, prod, etc.)
-- Favor managed and serverless AWS services
+- Favor managed and serverless services when available
 - **Tag all resources** when possible to enable cost tracking and resource management
 
 ## Folder Structure
@@ -62,14 +62,16 @@ infra/
 
 ### Backend Configuration Structure
 
-Each backend configuration file should define:
-- S3 bucket for state storage
-- DynamoDB table for state locking (if using)
-- Region
+Each backend configuration file should define backend-specific settings such as:
+- State storage location (e.g., S3 bucket, Azure Storage, GCS bucket)
+- State locking mechanism (if supported by backend)
+- Region/location
 - Key prefix (environment-specific)
 - Encryption settings
 
-Example `backend/dev/backend.hcl`:
+**Note**: Backend configuration is cloud-provider specific. The examples below use AWS S3 backend, but adapt to your cloud provider's backend type.
+
+Example `backend/dev/backend.hcl` (AWS S3 backend):
 ```hcl
 bucket         = "terraform-state-dev"
 key            = "infrastructure/terraform.tfstate"
@@ -78,7 +80,7 @@ dynamodb_table = "terraform-state-lock-dev"
 encrypt        = true
 ```
 
-Example `backend/prod/backend.hcl`:
+Example `backend/prod/backend.hcl` (AWS S3 backend):
 ```hcl
 bucket         = "terraform-state-prod"
 key            = "infrastructure/terraform.tfstate"
@@ -86,6 +88,8 @@ region         = "us-east-1"
 dynamodb_table = "terraform-state-lock-prod"
 encrypt        = true
 ```
+
+For other cloud providers, use the appropriate backend configuration (e.g., `azurerm`, `gcs`, `s3`, etc.).
 
 ### Terraform Command Usage
 
@@ -114,14 +118,14 @@ terraform apply -var-file=environments/dev/terraform.tfvars
 
 ## Tagging Requirements
 
-All AWS resources **must** include tags when the resource type supports them. Tags are essential for:
+All cloud resources **must** include tags/labels when the resource type supports them. Tags are essential for:
 - Cost allocation and tracking per feature/service
 - Resource organization and discovery
 - Compliance and governance
 
 ### Standard Tag Structure
 
-Use the following tag structure for all resources:
+Use the following tag structure for all resources (adapt to your cloud provider's tagging system):
 
 ```hcl
 tags = {
@@ -133,11 +137,16 @@ tags = {
 }
 ```
 
-### AWS Tag Naming Standards
+**Note**: Different cloud providers use different terminology:
+- **AWS**: `tags`
+- **Azure**: `tags`
+- **GCP**: `labels` (different format, but same concept)
+
+### Tag Naming Standards
 
 - **Tag keys**: Use lowercase with hyphens (kebab-case), e.g., `service-name`, `cost-center`
-- **Tag keys**: Must be 1-128 characters, cannot start with `aws:` (reserved)
-- **Tag values**: Can be up to 256 characters, case-sensitive
+- **Tag keys**: Follow cloud provider's character limits and restrictions
+- **Tag values**: Follow cloud provider's character limits (typically 256 characters)
 - **Required tags**: `environment`, `service-name`, `category`, `feature`, `channel`
 - **Optional tags**: Add additional tags as needed (e.g., `team`, `cost-center`, `project`)
 
@@ -151,8 +160,8 @@ tags = {
 
 ### Examples
 
+**AWS Example:**
 ```hcl
-# S3 Bucket
 resource "aws_s3_bucket" "raw_data" {
   bucket = "data-platform-raw-zone-prod"
   
@@ -164,17 +173,37 @@ resource "aws_s3_bucket" "raw_data" {
     channel      = "all"
   }
 }
+```
 
-# Lambda Function
-resource "aws_lambda_function" "processor" {
-  # ... other configuration ...
+**Azure Example:**
+```hcl
+resource "azurerm_storage_account" "raw_data" {
+  name                     = "datapatformrawzoneprod"
+  resource_group_name      = azurerm_resource_group.main.name
+  location                 = azurerm_resource_group.main.location
   
   tags = {
     environment  = "production"
     service-name = "data-platform"
-    category     = "compute"
-    feature      = "data-processor"
-    channel      = "batch"
+    category     = "data-storage"
+    feature      = "raw-zone"
+    channel      = "all"
+  }
+}
+```
+
+**GCP Example:**
+```hcl
+resource "google_storage_bucket" "raw_data" {
+  name     = "data-platform-raw-zone-prod"
+  location = "US"
+  
+  labels = {
+    environment  = "production"
+    service-name = "data-platform"
+    category     = "data-storage"
+    feature      = "raw-zone"
+    channel      = "all"
   }
 }
 ```
