@@ -80,15 +80,18 @@ All Terraform commands in GitHub Actions workflows **must** use environment-spec
 
 ### Environment Variable
 
-Workflows **must** set the `ENVIRONMENT` variable (e.g., `dev`, `prod`) to determine which configuration files to use:
+Workflows **must** set the `ENVIRONMENT` variable (e.g., `dev`, `prod`) to determine which configuration files to use. For `workflow_dispatch`, the input should take precedence:
 
 ```yaml
 env:
-  ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
-# OR for manual dispatch
-env:
-  ENVIRONMENT: ${{ inputs.environment }}
+  # Use workflow_dispatch input if provided, otherwise determine from branch
+  ENVIRONMENT: ${{ inputs.environment != '' && inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
 ```
+
+This ensures:
+- Manual workflow dispatch with environment input takes precedence
+- Automatic detection from branch name for push events
+- Defaults to 'dev' for non-main branches
 
 ### Complete Example Workflow
 
@@ -109,8 +112,8 @@ jobs:
   terraform:
     runs-on: ubuntu-latest
     env:
-      ENVIRONMENT: ${{ github.ref == 'refs/heads/main' && 'prod' || 'dev' }}
-      # OR for manual: ENVIRONMENT: ${{ inputs.environment }}
+      # Use workflow_dispatch input if provided, otherwise determine from branch
+      ENVIRONMENT: ${{ inputs.environment != '' && inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
     
     steps:
       - uses: actions/checkout@v3
@@ -118,26 +121,32 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
       
+      # If terraform files are in a subdirectory (e.g., infra/), add: working-directory: infra
       - name: Terraform Init
         run: |
           terraform init \
             -backend-config=backend/${{ env.ENVIRONMENT }}/backend.hcl
+        # working-directory: infra  # Uncomment if terraform files are in infra/ subdirectory
       
       - name: Terraform Format Check
         run: terraform fmt -check -recursive
+        # working-directory: infra  # Uncomment if terraform files are in infra/ subdirectory
       
       - name: Terraform Validate
         run: terraform validate
+        # working-directory: infra  # Uncomment if terraform files are in infra/ subdirectory
       
       - name: Terraform Plan
         run: |
           terraform plan \
             -var-file=environments/${{ env.ENVIRONMENT }}/terraform.tfvars \
             -out=tfplan
+        # working-directory: infra  # Uncomment if terraform files are in infra/ subdirectory
       
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: terraform apply -auto-approve tfplan
+        # working-directory: infra  # Uncomment if terraform files are in infra/ subdirectory
         # Requires approval for production deployments
 ```
 
