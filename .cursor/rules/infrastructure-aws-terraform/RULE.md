@@ -22,6 +22,84 @@ Standardize how infrastructure is defined and deployed.
 - Favor managed and serverless AWS services
 - **Tag all resources** when possible to enable cost tracking and resource management
 
+## Folder Structure
+
+### Required Directory Organization
+
+All Terraform projects **must** follow this directory structure to ensure proper environment separation:
+
+```
+infra/
+├── environments/          # Environment-specific variable files
+│   ├── dev/
+│   │   └── terraform.tfvars
+│   └── prod/
+│       └── terraform.tfvars
+├── backend/               # Environment-specific backend configuration
+│   ├── dev/
+│   │   └── backend.hcl
+│   └── prod/
+│       └── backend.hcl
+└── modules/               # Reusable Terraform modules (optional)
+    └── ...
+```
+
+### Environment-Specific Variable Files
+
+- **Location**: `environments/{environment}/terraform.tfvars`
+- **Purpose**: Store environment-specific variable values
+- **Naming**: Use `terraform.tfvars` as the filename (or `{environment}.tfvars` if multiple files per environment)
+- **Required**: Each environment (dev, prod, etc.) **must** have its own tfvars file
+- **Example**: `environments/dev/terraform.tfvars`, `environments/prod/terraform.tfvars`
+
+### Backend Configuration Files
+
+- **Location**: `backend/{environment}/backend.hcl`
+- **Purpose**: Store environment-specific backend configuration (S3 bucket, DynamoDB table, region, etc.)
+- **Naming**: Use `backend.hcl` as the filename
+- **Required**: Each environment **must** have its own backend configuration file
+- **Example**: `backend/dev/backend.hcl`, `backend/prod/backend.hcl`
+
+### Backend Configuration Structure
+
+Each backend configuration file should define:
+- S3 bucket for state storage
+- DynamoDB table for state locking (if using)
+- Region
+- Key prefix (environment-specific)
+- Encryption settings
+
+Example `backend/dev/backend.hcl`:
+```hcl
+bucket         = "terraform-state-dev"
+key            = "infrastructure/terraform.tfstate"
+region         = "us-east-1"
+dynamodb_table = "terraform-state-lock-dev"
+encrypt        = true
+```
+
+Example `backend/prod/backend.hcl`:
+```hcl
+bucket         = "terraform-state-prod"
+key            = "infrastructure/terraform.tfstate"
+region         = "us-east-1"
+dynamodb_table = "terraform-state-lock-prod"
+encrypt        = true
+```
+
+### Terraform Command Usage
+
+When running Terraform commands, always specify:
+- Backend config: `-backend-config=backend/{environment}/backend.hcl`
+- Variable file: `-var-file=environments/{environment}/terraform.tfvars`
+
+Example:
+```bash
+terraform init -backend-config=backend/dev/backend.hcl
+terraform plan -var-file=environments/dev/terraform.tfvars
+terraform apply -var-file=environments/dev/terraform.tfvars
+```
+
 ## Tagging Requirements
 
 All AWS resources **must** include tags when the resource type supports them. Tags are essential for:
@@ -93,3 +171,7 @@ resource "aws_lambda_function" "processor" {
 - Do not provision infrastructure outside Terraform
 - Do not create long-running servers without justification
 - Do not create resources without tags (unless the resource type doesn't support them)
+- Do not mix environment configurations in a single tfvars or backend file
+- Do not hardcode environment-specific values in `.tf` files (use variables and tfvars instead)
+- Do not commit sensitive values in tfvars files (use secrets management or environment variables)
+- Do not use the same backend state bucket/table for multiple environments
