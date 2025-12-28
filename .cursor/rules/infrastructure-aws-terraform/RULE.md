@@ -93,8 +93,20 @@ When running Terraform commands, always specify:
 - Backend config: `-backend-config=backend/{environment}/backend.hcl`
 - Variable file: `-var-file=environments/{environment}/terraform.tfvars`
 
-Example:
+**Note**: If your Terraform files are in a subdirectory (e.g., `infra/`), either:
+- Change to that directory before running commands: `cd infra && terraform init ...`
+- Or use relative paths from the repository root: `-backend-config=infra/backend/{environment}/backend.hcl`
+
+Example (assuming commands run from repository root):
 ```bash
+terraform init -backend-config=backend/dev/backend.hcl
+terraform plan -var-file=environments/dev/terraform.tfvars
+terraform apply -var-file=environments/dev/terraform.tfvars
+```
+
+Example (if terraform files are in `infra/` subdirectory):
+```bash
+cd infra
 terraform init -backend-config=backend/dev/backend.hcl
 terraform plan -var-file=environments/dev/terraform.tfvars
 terraform apply -var-file=environments/dev/terraform.tfvars
