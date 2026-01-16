@@ -12,11 +12,17 @@ This repository contains Cursor IDE rules organized by category. Use the install
 
 ### Quick Start
 
-Run the installation script:
+Run the installation script (use one of these methods):
 
 ```bash
+# Method 1: Make executable and run directly (recommended)
 ./install.sh
+
+# Method 2: Run with bash explicitly
+bash install.sh
 ```
+
+**Note:** Do not run with `sh install.sh` as the script requires bash features.
 
 The script will:
 1. Scan all `RULE.md` files in the `rules/` directory
