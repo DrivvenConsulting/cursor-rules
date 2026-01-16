@@ -5,6 +5,12 @@
 
 set -euo pipefail
 
+# Ensure we're running with bash (not sh)
+if [ -z "${BASH_VERSION:-}" ]; then
+    echo "Error: This script requires bash. Please run it with: bash install.sh" >&2
+    exit 1
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -75,13 +81,19 @@ combine_rules() {
     local combined_rules=""
     local rule_count=0
     
-    info "Scanning for RULE.md files..."
+    info "Scanning for RULE.md files..." >&2
     
     # Find all RULE.md files and process them
-    while IFS= read -r -d '' rule_file; do
+    # Use a temporary file to avoid process substitution issues
+    local temp_file
+    temp_file=$(mktemp)
+    find "$RULES_DIR" -name "RULE.md" -type f | sort > "$temp_file"
+    
+    while IFS= read -r rule_file; do
+        [ -z "$rule_file" ] && continue
         rule_count=$((rule_count + 1))
         rule_name=$(basename "$(dirname "$rule_file")")
-        info "  Found: $rule_name"
+        info "  Found: $rule_name" >&2
         
         # Add separator and rule name
         combined_rules+="\n\n# Rule: ${rule_name}\n\n"
@@ -89,14 +101,16 @@ combine_rules() {
         # Strip frontmatter and add content
         combined_rules+="$(strip_frontmatter "$rule_file")"
         combined_rules+="\n"
-    done < <(find "$RULES_DIR" -name "RULE.md" -type f -print0 | sort -z)
+    done < "$temp_file"
+    
+    rm -f "$temp_file"
     
     if [ $rule_count -eq 0 ]; then
-        error "No RULE.md files found in $RULES_DIR"
+        error "No RULE.md files found in $RULES_DIR" >&2
         exit 1
     fi
     
-    info "Found $rule_count rule file(s)"
+    info "Found $rule_count rule file(s)" >&2
     
     # Remove leading newlines
     combined_rules="${combined_rules#\\n\\n}"
@@ -118,18 +132,44 @@ install_rules() {
     
     info "Installing rules to Cursor database..."
     
-    # Use sqlite3 to update the rules
-    # The value needs to be properly escaped for SQL
-    sqlite3 "$DB_PATH" <<EOF
-BEGIN TRANSACTION;
-INSERT INTO ItemTable (key, value)
-  VALUES ('aicontext.personalContext', $(printf "%q" "$rules_text"))
-  ON CONFLICT(key) DO UPDATE SET
-    value = excluded.value;
-COMMIT;
-EOF
+    # Use Python to generate the SQL file with proper escaping
+    # Write rules to temp file first, then have Python read it
+    local rules_file
+    rules_file=$(mktemp)
+    local sql_file
+    sql_file=$(mktemp)
     
-    if [ $? -eq 0 ]; then
+    # Write rules text to temp file
+    printf '%s' "$rules_text" > "$rules_file"
+    
+    # Use Python to escape and generate SQL
+    python3 <<PYTHON_SCRIPT
+import sys
+
+# Read rules text from file
+with open('$rules_file', 'r') as f:
+    rules_text = f.read()
+
+# Escape single quotes for SQL (double them)
+escaped_text = rules_text.replace("'", "''")
+
+# Generate SQL
+sql = f"""BEGIN TRANSACTION;
+INSERT OR REPLACE INTO ItemTable (key, value)
+  VALUES ('aicontext.personalContext', '{escaped_text}');
+COMMIT;
+"""
+
+# Write SQL file
+with open('$sql_file', 'w') as f:
+    f.write(sql)
+PYTHON_SCRIPT
+    
+    sqlite3 "$DB_PATH" < "$sql_file"
+    local exit_code=$?
+    rm -f "$sql_file" "$rules_file"
+    
+    if [ $exit_code -eq 0 ]; then
         info "Rules successfully installed!"
     else
         error "Failed to install rules to database"
