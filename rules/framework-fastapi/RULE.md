@@ -16,6 +16,7 @@ Define standards for backend APIs and services using FastAPI, ensuring clean sep
 - Use **Pydantic** for request and response models
 - All endpoints must validate inputs using Pydantic models
 - Business logic must be delegated to service layers
+- **All routes must be versioned**, starting with `/v1/` prefix
 
 ## Deployment Preference
 - Prefer serverless deployments
@@ -29,6 +30,7 @@ Define standards for backend APIs and services using FastAPI, ensuring clean sep
 - Use dependency injection for services
 - Return appropriate HTTP status codes
 - Use response models for all endpoints
+- **Version all API routes** using `/v1/` prefix (e.g., `/v1/users`, `/v1/orders`)
 
 ## Do Not
 - Do not embed business logic directly in endpoints
@@ -36,6 +38,7 @@ Define standards for backend APIs and services using FastAPI, ensuring clean sep
 - Do not skip input validation
 - Do not return raw database objects (use response models)
 - Do not handle exceptions in endpoints (use exception handlers)
+- Do not create routes without versioning (all routes must include `/v1/` prefix)
 
 ## Examples
 
@@ -58,8 +61,8 @@ class UserResponse(BaseModel):
     email: str
     role: str
 
-# Router
-router = APIRouter(prefix="/users", tags=["users"])
+# Router with versioning
+router = APIRouter(prefix="/v1/users", tags=["users"])
 
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
@@ -120,8 +123,10 @@ async def get_user(
 ### ❌ Bad: Business Logic in Endpoint
 
 ```python
-# ❌ BAD: Business logic embedded in endpoint
-@router.post("/users/")
+# ❌ BAD: Business logic embedded in endpoint (also missing versioning)
+router = APIRouter(prefix="/users", tags=["users"])  # Missing /v1/ prefix
+
+@router.post("/")
 async def create_user(request: UserCreateRequest):
     # Business logic in endpoint
     if not request.email or "@" not in request.email:
@@ -229,8 +234,11 @@ def get_user_service() -> UserService:
     repository = DynamoDBUserRepository()
     return UserService(repository=repository)
 
+# Router with versioning
+router = APIRouter(prefix="/v1/users", tags=["users"])
+
 # Use in endpoint
-@router.post("/users/", response_model=UserResponse)
+@router.post("/", response_model=UserResponse)
 async def create_user(
     request: UserCreateRequest,
     user_service: UserService = Depends(get_user_service)
@@ -302,7 +310,7 @@ class UserService:
 ### ❌ Bad: Direct Database Access in Endpoint
 
 ```python
-# ❌ BAD: Direct database access in endpoint
+# ❌ BAD: Direct database access in endpoint (also missing versioning)
 @router.get("/users/{user_id}")
 async def get_user(user_id: str):
     dynamodb = boto3.resource('dynamodb')
@@ -347,7 +355,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 from fastapi import Query
 from typing import Optional
 
-@router.get("/users/", response_model=UserListResponse)
+# Router with versioning
+router = APIRouter(prefix="/v1/users", tags=["users"])
+
+@router.get("/", response_model=UserListResponse)
 async def list_users(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(10, ge=1, le=100, description="Items per page"),
@@ -371,4 +382,47 @@ async def list_users(
         role=role
     )
     return UserListResponse(**users)
+```
+
+### ✅ Good: API Versioning Setup
+
+```python
+from fastapi import FastAPI
+from routers import users, orders, auth
+
+app = FastAPI(title="API Service", version="1.0.0")
+
+# Include versioned routers
+app.include_router(users.router)  # prefix="/v1/users" in router definition
+app.include_router(orders.router)  # prefix="/v1/orders" in router definition
+app.include_router(auth.router)    # prefix="/v1/auth" in router definition
+
+# Example router definition with versioning
+# In routers/users.py:
+router = APIRouter(prefix="/v1/users", tags=["users"])
+
+@router.get("/")
+async def list_users():
+    """List all users - accessible at /v1/users/"""
+    ...
+
+@router.get("/{user_id}")
+async def get_user(user_id: str):
+    """Get user by ID - accessible at /v1/users/{user_id}"""
+    ...
+```
+
+### ❌ Bad: Routes Without Versioning
+
+```python
+# ❌ BAD: Router without version prefix
+router = APIRouter(prefix="/users", tags=["users"])  # Missing /v1/
+
+# ❌ BAD: Routes without versioning in main app
+app.include_router(users.router)  # Router should have /v1/ prefix
+
+# ❌ BAD: Direct route definition without versioning
+@app.get("/users/{user_id}")  # Should be /v1/users/{user_id}
+async def get_user(user_id: str):
+    ...
 ```
